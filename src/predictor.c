@@ -187,10 +187,10 @@ make_lhist_prediction(uint32_t pc){
 
   int index = lht[masked_pc] & lhist_mask;      //get the content of local history
 
-  int prediction = lpt[index];                  //fetch the prediction (local history as index)
+  int local_prediction = lpt[index];                  //fetch the prediction (local history as index)
 
   //if prediction greater than 1 (either 10 / 11), then the branch prediction is taken
-  if(prediction > WN)
+  if(local_prediction > WN)
     return TAKEN;
   //otherwise not taken
   else
@@ -315,12 +315,14 @@ train_tournament_predictor(uint32_t pc, uint8_t outcome){
         tdt[index] -= 1;
     }
   }
+
+  train_gshare_predictor(pc,outcome);
+  train_lhist_predictor(pc,outcome);
 }
 
 void
 train_perceptron_predictor(uint32_t pc, uint8_t outcome){
   int index = pc & (numPerceptrons - 1);
-  //printf("print");
   if ((gPrediction != outcome) || (abs(prediction) < 256))
   {
     
@@ -348,7 +350,7 @@ init_predictor()
       init_gshare();
       break;
     case TOURNAMENT:
-      //init_tournament();
+      init_tournament();
       break;
     case CUSTOM:
       init_perceptron();
@@ -376,7 +378,7 @@ make_prediction(uint32_t pc)
     case GSHARE:
       return make_gshare_prediction(pc);
     case TOURNAMENT:
-      //return make_tournament_prediction(pc);
+      return make_tournament_prediction(pc);
     case CUSTOM:
       return make_perceptron_prediction(pc);
     default:
@@ -404,7 +406,7 @@ train_predictor(uint32_t pc, uint8_t outcome)
       train_gshare_predictor(pc,outcome);
       break;
     case TOURNAMENT:
-      //train_tournament_predictor(pc,outcome);
+      train_tournament_predictor(pc,outcome);
       break;
     case CUSTOM:
       train_perceptron_predictor(pc,outcome);
