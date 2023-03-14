@@ -7,6 +7,7 @@
 //========================================================//
 #include <stdio.h>
 #include "predictor.h"
+#include <stdlib.h>
 
 //
 // TODO:Student Information
@@ -49,25 +50,25 @@ int tdt_size;             //size of tournament decision table
 
 
 
-//------------------------------------//
-//      Predictor Data Structures     //
-//------------------------------------//
 
-//
-//TODO: Add your own Branch Predictor data structures here
-//
+//perceptron global param
+#define Budget   (1024*64)
+#define numWeights   28
+#define threshold   12
+#define absMaxWeight 127
+#define weightBits    8
+#define sizeOfPerceptron ((numWeights+1)*weightBits)
+#define numPerceptrons ((int)Budget/sizeOfPerceptron)
 
+#define max(a,b) ((a) > (b) ? (a) : (b))
+#define min(a,b) ((a) < (b) ? (a) : (b))
 
-//------------------------------------//
-//        Predictor Functions         //
-//------------------------------------//
+int32_t perceptronWeightsTable[numPerceptrons][numWeights];
+int32_t perceptronBiasTable[numPerceptrons];
+uint32_t gHistory;      //global history storage
+uint8_t gPrediction;                 //prediction
+int prediction;
 
-// helper function for masking program counter
-//
-
-
-// Initialize the predictor
-//
 
 
 //initialization function for gshare
@@ -142,6 +143,19 @@ init_tournament(){
 }
 
 void
+init_perceptron(){
+  for(int i = 0; i < numPerceptrons; i++){
+    perceptronBiasTable[i] = 0;
+    for(int j = 0; j < numWeights; j++){
+      perceptronWeightsTable[i][j] = 0;
+    }
+  }
+  printf("Number of perceptrons: %d\n", numPerceptrons);
+  printf("Number of weights: %d\n", numWeights);
+  printf("Number of weightBits: %d\n", weightBits);
+  printf("total memory of perceptron predictor: %d Kbits \n", (numPerceptrons*(numWeights + 1)*(weightBits + 1))/1024);
+
+}
 
 /// @brief prediction function for gshare
 /// @param pc program counter
@@ -197,6 +211,23 @@ make_tournament_prediction(uint32_t pc){
   else
     return make_lhist_prediction(pc);
 }
+
+
+int
+make_perceptron_prediction(uint32_t pc){
+  int index = pc & (numPerceptrons - 1);
+  prediction = perceptronBiasTable[index];
+  for (int i = 0; i < numPerceptrons; i++){
+    if((gHistory >> i) & 1)
+      prediction = prediction + perceptronWeightsTable[index][i];
+    else
+      prediction = prediction - perceptronWeightsTable[index][i];
+  }
+  gPrediction = prediction >= 0? TAKEN: NOTTAKEN; 
+  return gPrediction;
+
+}
+
 
 /// @brief update gshare prediction hashtable
 /// @param pc program counter
@@ -286,6 +317,26 @@ train_tournament_predictor(uint32_t pc, uint8_t outcome){
   }
 }
 
+void
+train_perceptron_predictor(uint32_t pc, uint8_t outcome){
+  int index = pc & (numPerceptrons - 1);
+  //printf("print");
+  if ((gPrediction != outcome) || (abs(prediction) < 256))
+  {
+    
+    for (int j = 0; j < numPerceptrons; j++)
+    {
+      int8_t signMultiplier = ((gHistory >> j)&1) == 1 ? 1: -1; 
+
+      perceptronWeightsTable[index][j] += signMultiplier*(outcome==TAKEN?1:-1);
+      perceptronWeightsTable[index][j] = max(min(perceptronWeightsTable[index][j], absMaxWeight), -absMaxWeight-1);
+    }
+    perceptronBiasTable[index] += (outcome==TAKEN ?1:-1);
+  }
+
+  gHistory = (gHistory<<1 | outcome) & ((1<< numWeights) - 1);
+}
+
 
 void
 init_predictor()
@@ -295,9 +346,13 @@ init_predictor()
     case STATIC:
     case GSHARE:
       init_gshare();
+      break;
     case TOURNAMENT:
-      init_tournament();
+      //init_tournament();
+      break;
     case CUSTOM:
+      init_perceptron();
+      break;
     default:
       break;
   }
@@ -321,8 +376,9 @@ make_prediction(uint32_t pc)
     case GSHARE:
       return make_gshare_prediction(pc);
     case TOURNAMENT:
-      return make_tournament_prediction(pc);
+      //return make_tournament_prediction(pc);
     case CUSTOM:
+      return make_perceptron_prediction(pc);
     default:
       break;
   }
@@ -330,6 +386,9 @@ make_prediction(uint32_t pc)
   // If there is not a compatable bpType then return NOTTAKEN
   return NOTTAKEN;
 }
+
+
+
 
 // Train the predictor the last executed branch at PC 'pc' and with
 // outcome 'outcome' (true indicates that the branch was taken, false
@@ -340,11 +399,16 @@ train_predictor(uint32_t pc, uint8_t outcome)
 {
    switch (bpType) {
     case STATIC:
+      break;
     case GSHARE:
       train_gshare_predictor(pc,outcome);
+      break;
     case TOURNAMENT:
-      train_tournament_predictor(pc,outcome);
+      //train_tournament_predictor(pc,outcome);
+      break;
     case CUSTOM:
+      train_perceptron_predictor(pc,outcome);
+      break;
     default:
       break;
   }
